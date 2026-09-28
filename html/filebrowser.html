@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>User Files</title>
+    <script src="js/lib/jquery-1.9.1.min.js"></script>
+    <style type="text/css">
+        html, body { height: 100%; margin: 0; }
+        body { background-color: #141414; color: #ddd; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; display: flex; flex-direction: column; }
+
+        header { padding: 8px 12px; border-bottom: 1px solid #333; background-color: #1c1c1c; }
+        #fm-breadcrumbs a { color: #9a6fb5; text-decoration: none; }
+        #fm-breadcrumbs a:hover { text-decoration: underline; }
+
+        .toolbar { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+        button, label.btn { background-color: #2b2b2b; color: #ddd; border: 1px solid #4a4a4a; border-radius: 3px; padding: 5px 10px; cursor: pointer; font-size: 13px; }
+        button:hover, label.btn:hover { background-color: #383838; }
+        button:disabled { color: #666; border-color: #3a3a3a; cursor: default; }
+        #fm-btn-delete:not(:disabled) { border-color: #7d4f92; color: #cfa9e0; }
+
+        #fm-dropzone { flex: 1; overflow-y: auto; position: relative; margin: 8px 12px; border: 2px dashed transparent; border-radius: 6px; }
+        #fm-dropzone.dropping { border-color: #9a6fb5; background-color: rgba(154, 111, 181, .07); }
+
+        table#fm-entries { width: 100%; border-collapse: collapse; font-size: 13px; }
+        #fm-entries th { text-align: left; color: #999; font-weight: normal; padding: 4px 8px; border-bottom: 1px solid #333; position: sticky; top: 0; background-color: #141414; }
+        #fm-entries td { padding: 5px 8px; border-bottom: 1px solid #242424; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; width: auto; }
+        #fm-entries tr:hover td { background-color: rgba(255, 255, 255, .03); }
+        #fm-entries span.dir { color: #c9a7e4; font-weight: bold; cursor: pointer; }
+        #fm-entries tr.empty td { text-align: center; color: #666; padding-top: 18px; }
+
+        footer#fm-status-bar { border-top: 1px solid #333; background-color: #1c1c1c; padding: 5px 12px; font-size: 12px; color: #9a6fb5; min-height: 20px; }
+        footer#fm-status-bar.error { color: #e08f8f; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div id="fm-breadcrumbs"></div>
+    <div class="toolbar">
+        <button type="button" id="fm-btn-new-folder">&#128193; New Folder</button>
+        <label class="btn" for="fm-file-input">&#11014;&#65039; Upload Files&hellip;</label>
+        <input type="file" id="fm-file-input" multiple style="display:none;">
+        <span style="flex:1"></span>
+        <button type="button" id="fm-btn-delete" disabled">&#128465;&#65039; Delete selected</button>
+    </div>
+</header>
+
+<div id="fm-dropzone">
+    <table id="fm-entries">
+        <thead><tr><th></th><th>Name</th><th>Size</th><th>Modified</th></tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<footer id="fm-status-bar"></footer>
+
+<script src="js/filebrowser.js"></script>
+</body>
+</html>
