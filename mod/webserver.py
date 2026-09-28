@@ -34,7 +34,7 @@ except ImportError:
 
 from mod import hostinfo
 from mod.profile import Profile
-from mod.settings import (DESKTOP, LOG, DEV_API,
+from mod.settings import (DESKTOP, LOG, DEV_API, DEV_ENVIRONMENT,
                           HTML_DIR, DOWNLOAD_TMP_DIR, DEVICE_KEY, DEVICE_WEBSERVER_PORT,
                           CLOUD_HTTP_ADDRESS, CLOUD_LABS_HTTP_ADDRESS,
                           PLUGINS_HTTP_ADDRESS, PEDALBOARDS_HTTP_ADDRESS, CONTROLCHAIN_HTTP_ADDRESS,
@@ -230,14 +230,22 @@ class TimelessRequestHandler(web.RequestHandler):
     def should_return_304(self):
         return False
 
+# RFC 2822 date, one year out from server start (matches the format previously hardcoded as "Mon, 31 Dec 2035 ...")
+EXPIRES_IN_ONE_YEAR = time.strftime('%a, %d %b %Y 12:00:00 gmt', time.gmtime(time.time() + 365 * 86400))
+
+
 class TimelessStaticFileHandler(web.StaticFileHandler):
     def compute_etag(self):
         return None
 
     def set_default_headers(self):
         self._headers.pop("Date")
+        if DEV_ENVIRONMENT:
+            # dev server: never let the browser pin stale JS/CSS
+            self.set_header("Cache-Control", "no-store")
+            return
         self.set_header("Cache-Control", "public, max-age=31536000")
-        self.set_header("Expires", "Mon, 31 Dec 2035 12:00:00 gmt")
+        self.set_header("Expires", EXPIRES_IN_ONE_YEAR)
 
     def should_return_304(self):
         return False
@@ -284,7 +292,7 @@ class CachedJsonRequestHandler(JsonRequestHandler):
     def set_default_headers(self):
         JsonRequestHandler.set_default_headers(self)
         self.set_header("Cache-Control", "public, max-age=31536000")
-        self.set_header("Expires", "Mon, 31 Dec 2035 12:00:00 gmt")
+        self.set_header("Expires", EXPIRES_IN_ONE_YEAR)
 
 class RemoteRequestHandler(JsonRequestHandler):
     def set_default_headers(self):
@@ -1981,7 +1989,7 @@ class BulkTemplateLoader(TimelessRequestHandler):
         self.set_header("Content-Type", "text/javascript; charset=UTF-8")
         basedir = os.path.join(HTML_DIR, 'include')
         for template in os.listdir(basedir):
-            if not re.match('^[a-z_]+\.html$', template):
+            if not re.match(r'^[a-z_]+\.html$', template):
                 continue
             with open(os.path.join(basedir, template), 'r') as fh:
                 contents = fh.read()
@@ -2011,7 +2019,7 @@ class BulkTemplateLoader(TimelessRequestHandler):
     def set_default_headers(self):
         TimelessRequestHandler.set_default_headers(self)
         self.set_header("Cache-Control", "public, max-age=31536000")
-        self.set_header("Expires", "Mon, 31 Dec 2035 12:00:00 gmt")
+        self.set_header("Expires", EXPIRES_IN_ONE_YEAR)
 
 class Ping(JsonRequestHandler):
     @web.asynchronous
@@ -2400,6 +2408,111 @@ class FilesUpload(SimpleFileReceiver):
         }
         callback()
 
+# ---------------------------------------------------------------------------
+# Built-in file manager for USER_FILES_DIR. Replaces the external
+# :8081 file service on installs where it is not running. Every client-supplied
+# path is relative to USER_FILES_DIR and validated with realpath so that neither
+# traversal nor symlinks can escape that tree.
+# ---------------------------------------------------------------------------
+
+class FileMgrBase(JsonRequestHandler):
+    def prepare(self):
+        os.makedirs(USER_FILES_DIR, exist_ok=True)
+        self.root = os.path.realpath(USER_FILES_DIR)
+
+    def userfiles_path(self, relpath):
+        target = os.path.realpath(os.path.join(self.root, (relpath or '').lstrip('/')))
+        if target != self.root and not target.startswith(self.root + os.sep):
+            raise web.HTTPError(403, "Path outside the user-files directory")
+        return target
+
+
+class FileMgrList(FileMgrBase):
+    def get(self):
+        path = self.userfiles_path(self.get_argument('path', ''))
+        entries = []
+        for name in os.listdir(path):
+            full = os.path.join(path, name)
+            try:
+                st = os.stat(full)
+            except OSError:
+                continue  # broken symlink or entry that vanished mid-listing
+            is_dir = os.path.isdir(full) and not os.path.islink(full)
+            entries.append({
+                'name': name,
+                'is_dir': is_dir,
+                'size': 0 if is_dir else st.st_size,
+                'mtime': int(st.st_mtime),
+            })
+        entries.sort(key=lambda e: (not e['is_dir'], e['name'].lower()))
+        rel = os.path.relpath(path, self.root)
+        self.write({
+            'ok': True,
+            'path': '' if rel == '.' else rel,
+            'entries': entries,
+        })
+
+
+class FileMgrMkdir(FileMgrBase):
+    def post(self):
+        name = FilesUpload.sanitize_filename(self.get_argument('name', ''))
+        if not name:
+            raise web.HTTPError(400, "Invalid folder name")
+        parent = self.userfiles_path(self.get_argument('path', ''))
+        target = os.path.join(parent, name)
+        if not (os.path.realpath(target) == self.root or os.path.realpath(target).startswith(self.root + os.sep)):
+            raise web.HTTPError(403, "Path outside the user-files directory")
+        try:
+            os.mkdir(target)  # single sanitized segment; parent must already exist
+        except FileExistsError:
+            self.write({'ok': False, 'error': "Folder '%s' already exists" % name})
+            return
+        self.write({'ok': True, 'name': name})
+
+
+class FileMgrUpload(FileMgrBase):
+    def post(self):
+        target_dir = self.userfiles_path(self.get_argument('path', ''))
+        if not os.path.isdir(target_dir) or os.path.islink(target_dir):
+            raise web.HTTPError(400, "Target directory does not exist")
+        parts = self.request.files.get('files', [])
+        if not parts:
+            raise web.HTTPError(400, "No files received (expected multipart field 'files')")
+        saved = []
+        for item in parts:
+            filename = FilesUpload.sanitize_filename(item['filename'])
+            base, ext = os.path.splitext(filename)
+            dest = os.path.join(target_dir, filename)
+            index = 0
+            while os.path.exists(dest):
+                index += 1
+                dest = os.path.join(target_dir, "%s %02d%s" % (base, index, ext))
+            body = item['body']
+            with open(dest, 'wb') as fh:
+                if isinstance(body, (bytes, bytearray)):
+                    fh.write(bytes(body))  # tornado <5 delivers small parts inline
+                else:
+                    for chunk in body:     # FileBodyIterator on newer runtimes
+                        fh.write(chunk)
+            saved.append(os.path.basename(dest))
+        self.write({'ok': True, 'saved': saved})
+
+
+class FileMgrDelete(FileMgrBase):
+    def post(self):
+        rel = (self.get_argument('path', '') or '').strip('/')
+        if not rel:
+            raise web.HTTPError(400, "Refusing to delete the user-files root")
+        target = self.userfiles_path(rel)
+        if os.path.isdir(target) and not os.path.islink(target):
+            shutil.rmtree(target)  # never follow a symlinked directory out of the tree
+        elif os.path.exists(target) or os.path.islink(target):
+            os.remove(target)      # regular file, broken link or (safe) dir-symlink removal
+        else:
+            raise web.HTTPError(404, "Not found")
+        self.write({'ok': True})
+
+
 class FilesList(JsonRequestHandler):
     complete_audiofile_exts = (
         # through libsndfile
@@ -2592,6 +2705,12 @@ application = web.Application(
             # file listing etc
             (r"/files/list/?", FilesList),
             (r"/files/upload/?", FilesUpload),
+
+            # Built-in user-files manager (stom-pi); see FileMgr* handlers above
+            (r"/file-manager/list/?", FileMgrList),
+            (r"/file-manager/mkdir/?", FileMgrMkdir),
+            (r"/file-manager/delete/?", FileMgrDelete),
+            (r"/file-manager/upload/?", FileMgrUpload),
 
             (r"/reset/?", DashboardClean),
 

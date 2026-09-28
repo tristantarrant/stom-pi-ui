@@ -15,7 +15,7 @@ JqueryClass('fileManagerBox', {
         options.open = function () {
             console.log("FileManager open")
             if (! self.data('loaded')) {
-                var url = window.location.protocol + '//' + window.location.hostname + ':8081/'
+                var url = '/filebrowser.html'  // stom-pi: built-in user-files browser, same origin as the UI server (replaces external :8081 service)
                 self.find('iframe').attr('src', url)
                 self.data('loaded', true)
             }
