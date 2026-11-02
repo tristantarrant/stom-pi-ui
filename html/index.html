@@ -354,6 +354,7 @@ $('document').ready(function() {
 {% end %}
 <script type="text/javascript" src="js/desktop.js?v={{version}}"></script>
 <script type="text/javascript" src="js/pedalboard.js?v={{version}}"></script>
+<script type="text/javascript" src="js/grid.js?v={{version}}"></script>
 <script type="text/javascript" src="js/pedalboards.js?v={{version}}"></script>
 <script type="text/javascript" src="js/file_manager.js?v={{version}}"></script>
 <script type="text/javascript" src="js/banks.js?v={{version}}"></script>
@@ -652,6 +653,8 @@ $('document').ready(function() {
                             <li class="js-preset-manage">Load / Manage</li>
                         </ul>
                     </div>
+                    <button class="js-grid-toggle" id="js-grid-toggle">Grid Off</button>
+                    <button class="js-align-to-grid" id="js-align-to-grid">Align to Grid</button>
                     <button class="js-reset">New Pedalboard</button>
                     <button class="js-save">Save</button>
                     <button class="js-save-as">Save as</button>

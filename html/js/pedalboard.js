@@ -698,6 +698,7 @@ JqueryClass('pedalboard', {
         var self = $(this)
 
         element.bind('pluginAdded', function (e, position) {
+            if (window.ModGrid && ModGrid.enabled) position = ModGrid.alignXY(position.x, position.y)
             var waiter = self.data('wait')
             var instance = self.pedalboard('generateInstance', pluginData.uri)
             waiter.startPlugin(instance, position)
@@ -1380,9 +1381,11 @@ JqueryClass('pedalboard', {
             dragStop: function (e, ui) {
                 self.trigger('pluginDragStop')
                 self.trigger('modified')
+                var gridPos = window.ModGrid ? ModGrid.alignXY(ui.position.left, ui.position.top) : { x: ui.position.left, y: ui.position.top }
+                obj.icon.css({ left: gridPos.x, top: gridPos.y })
                 self.pedalboard('drawPluginJacks', obj.icon)
                 obj.icon.removeClass('dragging')
-                self.data('pluginMove')(instance, ui.position.left, ui.position.top)
+                self.data('pluginMove')(instance, gridPos.x, gridPos.y)
                 self.pedalboard('adapt', false)
             },
             click: function (event) {
